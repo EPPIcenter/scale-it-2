@@ -1,0 +1,141 @@
+library(ggplot2)
+library(ggmap)
+library(ggpubr)
+library(maps)
+library(mapproj)
+library(mapdata)
+library(sf)
+library(tidyverse)
+library(geojsonio)
+library(broom)
+library(viridis)
+
+setwd("../PHI_scaleit/SCALEIT_2.0")
+load('ZCTAroche.RData')
+load('ZCTAvitros.RData')
+
+samples_collected<-read_csv("reshaped_redux.csv")
+
+counts<-samples_collected %>% count(zcta)
+
+spdf <- geojson_read("C:/Users/isobe/Downloads/Bay Area ZIP Codes.geojson",  what = "sp")
+spdf<-spdf[substr(spdf$zip, 1,3)  %in% c("941") , ]
+spdf<-spdf[spdf$zip != "94128" , ]
+
+#  fortify the data 
+
+spdf_fortified <- tidy(spdf, region = "zip")
+spdf_fortified$id<-as.numeric(spdf_fortified$id)
+# spdf_fortified_totalsamp<-spdf_fortified %>%
+#   left_join(. ,  as.data.frame(counts), by=c("id"="zcta"))
+#   
+spdf_fortified_r = spdf_fortified %>%
+  left_join(. ,  as.data.frame(zcta_Roche[[4]]), by=c("id"="strat_cat"))
+
+spdf_fortified_v = spdf_fortified %>%
+  left_join(. ,  as.data.frame(zcta_vitros[[4]]), by=c("id"="strat_cat"))
+
+#spdf_fortified$mean[ is.na(spdf_fortified$mean )] = 0.0
+
+
+
+# now we plot
+
+ggplot() +
+  geom_polygon(data = spdf_fortified_totalsamp, aes(fill=n, x = long, y = lat, group = group)) +
+  theme_void() +
+  coord_map()+
+  scale_colour_brewer(palette = "RdBu")
+
+spdf_fortified_v %>% filter(id == "94134")
+
+seroprev_r<- 
+  ggplot() +
+  geom_polygon(data = spdf_fortified_r, aes(fill = mean, x = long, y = lat, group = group)) +
+  theme_void() +
+  coord_map()+
+  #theme(legend.position = "none")+
+  labs_pubr()+
+  rremove("axis.text")+
+  rremove("xlab")+
+  rremove("ylab")+
+  scale_fill_distiller(palette ="RdBu")+
+  #scale_fill_viridis(limits = range(spdf_fortified_r$mean,spdf_fortified_v$mean, na.rm = TRUE))+
+ # scale_fill_viridis()+
+  ggtitle("Seroprevalence (Roche)")
+  
+seroprev_v<- 
+ggplot() +
+  geom_polygon(data = spdf_fortified_v, aes(fill = mean, x = long, y = lat, group = group)) +
+  theme_void() +
+  coord_map()+
+  #theme(legend.position = "none")+
+  theme(legend.title = element_blank())+
+  labs_pubr()+
+  rremove("axis.text")+
+  rremove("xlab")+
+  rremove("ylab")+
+  scale_fill_distiller(palette ="PuOr")+
+  #scale_fill_viridis(limits = range(spdf_fortified_r$mean,spdf_fortified_v$mean, na.rm = TRUE))+
+  #scale_fill_viridis()+
+  ggtitle("Seroprevalence (Vitros)")
+
+ci_r<- 
+ggplot() +
+  geom_polygon(data = spdf_fortified_r, aes(fill = (hici-lowci), x = long, y = lat, group = group)) +
+  theme_void() +
+  coord_map()+
+ # theme(legend.position = "none")+
+  scale_fill_viridis(limits = range(spdf_fortified_r$mean,spdf_fortified_v$mean, na.rm = TRUE))+
+  #scale_fill_viridis()+
+  labs_pubr()+
+  rremove("axis.text")+
+  rremove("xlab")+
+  rremove("ylab")+
+  ggtitle("Credible interval range (Roche)")
+
+ci_v<-ggplot() +
+  geom_polygon(data = spdf_fortified_v, aes(fill = (hici-lowci), x = long, y = lat, group = group)) +
+  theme_void() +
+  #theme(legend.position = "none")+
+  coord_map()+
+  scale_fill_viridis(limits = range(spdf_fortified_r$mean,spdf_fortified_v$mean, na.rm = TRUE))+
+  #scale_fill_viridis()+
+  labs_pubr()+
+  rremove("axis.text")+
+  rremove("xlab")+
+  rremove("ylab")+
+  ggtitle("Credible interval range (Vitros)")
+
+spdf_fortified_v$diff<-spdf_fortified_v$mean - spdf_fortified_r$mean
+spdf_fortified_v$diff
+r_minus_vitros<-ggplot() +
+  geom_polygon(data = spdf_fortified_v, aes(fill = diff, x = long, y = lat, group = group)) +
+  theme_void() +
+  #theme(legend.position = "none")+
+  coord_map()+
+  labs_pubr()+
+  rremove("axis.text")+
+  rremove("xlab")+
+  rremove("ylab")+
+  scale_fill_distiller(palette = "BrBG")+
+  #scale_fill_viridis(limits = range(spdf_fortified_r$mean,spdf_fortified_v$mean, na.rm = TRUE))+
+  #scale_fill_viridis()+
+  ggtitle("Vitros - Roche")
+
+
+
+ggarrange(seroprev_r, ci_r, seroprev_v,ci_v,
+          labels = c("a", "b", "c","d"),
+          ncol = 2, nrow = 2, align="hv")
+
+ggsave("map-notsamescale-withci.tiff", units="in", width=8, height=5, dpi=300, compression = 'lzw')
+
+
+ggarrange(seroprev_r, seroprev_v, r_minus_vitros,
+          labels = c("a", "b", "c"),
+          ncol = 3, nrow = 1, align="hv")
+
+ggsave("map-notsamescale.tiff", units="in", width=9, height=4, dpi=300, compression = 'lzw')
+
+
