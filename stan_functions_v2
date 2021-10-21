@@ -1,0 +1,162 @@
+## Stan code for bivariate model
+## Output: p_vacc, p_inf, ratio_p_vacc_p_inf (risk ratio)
+model_stan_Ngroup_2pvacc_priorData <- '
+data {
+  int n_groups;
+  int A_plus_C[n_groups]; // Vitros+, Roche+
+  int B[n_groups]; // Vitros+, Roche-
+  int D[n_groups]; // Vitros-, Roche-
+  
+  int n_draws;
+  real y_obs[n_groups,n_draws];
+}
+
+transformed data {
+  int N[n_groups];
+
+  for(i in 1:n_groups) N[i] = A_plus_C[i] + B[i] + D[i];
+}
+
+parameters {
+  real<lower=0.0, upper=1.0> p_vacc_given_inf[n_groups];
+  real<lower=0.0, upper=1.0> p_vacc_given_uninf[n_groups];
+  real<lower=0.0, upper=1.0> p_inf[n_groups];
+  
+  real<lower=0.0, upper=1.0> mu_p_vacc[n_groups];
+  real<lower=0.0> kappa_p_vacc[n_groups];
+}
+
+transformed parameters {
+  simplex[3] p[n_groups];
+  
+  for(i in 1:n_groups) {
+    p[i,1] = p_inf[i];
+    p[i,2] = (1.0-p_inf[i]) * p_vacc_given_uninf[i];
+    p[i,3] = (1.0-p_inf[i]) * (1.0-p_vacc_given_uninf[i]);
+  }
+} 
+
+model {
+  for(i in 1:n_groups) {
+    target += binomial_lpmf(A_plus_C[i] | N[i], p[i,1]);
+    target += binomial_lpmf(B[i] | N[i], p[i,2]);
+    target += binomial_lpmf(D[i] | N[i], p[i,3]);
+    
+    // Priors based on reported SF vacc data
+    target += beta_proportion_lpdf((p_inf[i]*p_vacc_given_inf[i]) + p[i,2] | mu_p_vacc[i], kappa_p_vacc[i]);
+  
+    // Hyper-priors
+    target += beta_proportion_lpdf(y_obs[i] | mu_p_vacc[i], kappa_p_vacc[i]);
+  }
+}
+
+generated quantities {
+  real p_vacc[n_groups];
+  real ratio_p_vacc_p_inf[n_groups];
+  
+  for(i in 1:n_groups) {
+    p_vacc[i] = (p_inf[i]*p_vacc_given_inf[i]) + p[i,2];
+    ratio_p_vacc_p_inf[i] = p_vacc[i] / p_inf[i];
+  }
+}
+'
+
+## Stan code for bivariate model
+## Output: p_vacc, p_inf, ratio_p_vacc_p_inf (risk ratio), RRR_vs_white (relative risk ratio), p_inf_vs_white, p_vacc_vs_white
+model_stan_Ngroup_2pvacc_priorData_with_RRR_vs_white <- '
+data {
+  int n_groups;
+  int A_plus_C[n_groups]; // Vitros+, Roche+
+  int B[n_groups]; // Vitros+, Roche-
+  int D[n_groups]; // Vitros-, Roche+
+  
+  int n_draws;
+  real y_obs[n_groups,n_draws];
+}
+
+transformed data {
+  int N[n_groups];
+
+  for(i in 1:n_groups) N[i] = A_plus_C[i] + B[i] + D[i];
+}
+
+parameters {
+  real<lower=0.0, upper=1.0> p_vacc_given_inf[n_groups];
+  real<lower=0.0, upper=1.0> p_vacc_given_uninf[n_groups];
+  real<lower=0.0, upper=1.0> p_inf[n_groups];
+  
+  real<lower=0.0, upper=1.0> mu_p_vacc[n_groups];
+  real<lower=0.0> kappa_p_vacc[n_groups];
+}
+
+transformed parameters {
+  simplex[3] p[n_groups];
+  
+  for(i in 1:n_groups) {
+    p[i,1] = p_inf[i];
+    p[i,2] = (1.0-p_inf[i]) * p_vacc_given_uninf[i];
+    p[i,3] = (1.0-p_inf[i]) * (1.0-p_vacc_given_uninf[i]);
+  }
+} 
+
+model {
+  for(i in 1:n_groups) {
+    target += binomial_lpmf(A_plus_C[i] | N[i], p[i,1]);
+    target += binomial_lpmf(B[i] | N[i], p[i,2]);
+    target += binomial_lpmf(D[i] | N[i], p[i,3]);
+    
+    // Priors based on reported SF vacc data
+    target += beta_proportion_lpdf((p_inf[i]*p_vacc_given_inf[i]) + p[i,2] | mu_p_vacc[i], kappa_p_vacc[i]);
+  
+    // Hyper-priors
+    target += beta_proportion_lpdf(y_obs[i] | mu_p_vacc[i], kappa_p_vacc[i]);
+  }
+}
+
+generated quantities {
+  real p_vacc[n_groups];
+  real ratio_p_vacc_p_inf[n_groups];
+  real RRR_vs_white[n_groups]; // Preserve the order of the groups
+  
+  real p_inf_vs_white[8];
+  real p_vacc_vs_white[8];
+  
+  for(i in 1:n_groups) {
+    p_vacc[i] = (p_inf[i]*p_vacc_given_inf[i]) + p[i,2];
+    ratio_p_vacc_p_inf[i] = p_vacc[i] / p_inf[i];
+  }
+  
+  // Compared to: 18-64 & White
+  RRR_vs_white[1] = ratio_p_vacc_p_inf[1] / ratio_p_vacc_p_inf[4];
+  RRR_vs_white[2] = ratio_p_vacc_p_inf[2] / ratio_p_vacc_p_inf[4];
+  RRR_vs_white[3] = ratio_p_vacc_p_inf[3] / ratio_p_vacc_p_inf[4];
+  RRR_vs_white[4] = ratio_p_vacc_p_inf[4] / ratio_p_vacc_p_inf[4];
+
+  p_inf_vs_white[1] = p_inf[1] / p_inf[4];
+  p_inf_vs_white[2] = p_inf[2] / p_inf[4];
+  p_inf_vs_white[3] = p_inf[3] / p_inf[4];
+  p_inf_vs_white[4] = p_inf[4] / p_inf[4];
+  
+  p_vacc_vs_white[1] = p_vacc[1] / p_vacc[4];
+  p_vacc_vs_white[2] = p_vacc[2] / p_vacc[4];
+  p_vacc_vs_white[3] = p_vacc[3] / p_vacc[4];
+  p_vacc_vs_white[4] = p_vacc[4] / p_vacc[4];
+
+  // Compared to: 65+ & White
+  RRR_vs_white[5] = ratio_p_vacc_p_inf[5] / ratio_p_vacc_p_inf[8];
+  RRR_vs_white[6] = ratio_p_vacc_p_inf[6] / ratio_p_vacc_p_inf[8];
+  RRR_vs_white[7] = ratio_p_vacc_p_inf[7] / ratio_p_vacc_p_inf[8];
+  RRR_vs_white[8] = ratio_p_vacc_p_inf[8] / ratio_p_vacc_p_inf[8];
+  
+  p_inf_vs_white[5] = p_inf[5] / p_inf[8];
+  p_inf_vs_white[6] = p_inf[6] / p_inf[8];
+  p_inf_vs_white[7] = p_inf[7] / p_inf[8];
+  p_inf_vs_white[8] = p_inf[8] / p_inf[8];
+  
+  p_vacc_vs_white[5] = p_vacc[5] / p_vacc[8];
+  p_vacc_vs_white[6] = p_vacc[6] / p_vacc[8];
+  p_vacc_vs_white[7] = p_vacc[7] / p_vacc[8];
+  p_vacc_vs_white[8] = p_vacc[8] / p_vacc[8];
+
+}
+'
